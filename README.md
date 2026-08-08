@@ -1,5 +1,11 @@
 # Invite Whitelist
 
+> [!WARNING]
+> This entire project has been heavily written using Claude and GitHub Copilot.
+> I am not a Java developer, so the code and documentation may contain mistakes,
+> rough edges, or assumptions that need correcting. Your mileage may vary - review,
+> test, and verify everything before relying on it in a production server.
+
 A Fabric server-side mod for Minecraft **26.2** that replaces manual `/whitelist add`
 with shareable invite links.
 
@@ -34,15 +40,6 @@ own small HTTP server inside the Minecraft server process.
   other mod compatible with `fabric-permissions-api`) if you want to grant
   invite permissions to non-op players. `fabric-permissions-api` itself is
   bundled inside this mod's jar, so you don't need to install it separately.
-
-Minecraft 26.2 ships unobfuscated with official Mojang mappings baked in,
-so there's no separate "Yarn mappings" dependency to configure - the code
-in this project already uses the official (Mojang) class/method names
-directly (`PlayerList`, `UserWhiteList`, `CommandSourceStack`, etc.). This
-also means Loom doesn't remap anything for 26.1+, so dependencies in
-`build.gradle` use plain `implementation` rather than the older
-`modImplementation`/`modApi` (those configurations no longer exist on the
-non-remapping Loom plugin).
 
 ## Project layout
 
@@ -210,48 +207,3 @@ restricted to invites and invitees that trace back to themselves:
   set `publicBaseUrl` to the proxy's address.
 - Treat invite links like the vanilla whitelist itself: only send them to
   people you actually want on the server.
-
-## Known things to double-check after building
-
-I don't have a way to compile against the real Minecraft 26.2 jar in this
-environment, so while every API used here (`PlayerList.getWhiteList()`,
-`UserWhiteList.remove(GameProfile)`, `MinecraftServer.getProfileCache()`,
-`CommandSourceStack`/`Commands`, `ServerLifecycleEvents`,
-`CommandRegistrationCallback`, `ServerPlayer.connection.disconnect(...)`,
-`Permissions.check(...)` from fabric-permissions-api) is based on confirmed
-26.2/official-mappings sources, there are a couple of spots worth a quick
-look if `./gradlew build` complains:
-
-- `PlayerList.setUsingWhiteList(boolean)` - the getter `isUsingWhitelist()`
-  is confirmed; the setter name is inferred from Mojang's usual naming
-  pattern. If it doesn't compile, check the actual setter name in
-  `PlayerList` (via your IDE's autocomplete once the Minecraft jar is
-  downloaded) and adjust `InviteWhitelistMod.java`.
-- `CommandSourceStack.getTextName()` - used to record who created an
-  invite. If renamed, swap it for whatever method returns the command
-  sender's display name as a `String`.
-- `fabric_permissions_api_version=0.7.0` in `gradle.properties` is the
-  version documented for Minecraft 26.1 at the time of writing; check
-  [lucko/fabric-permissions-api's version matrix](https://github.com/lucko/fabric-permissions-api/blob/master/USAGE.md#version-matrix)
-  for whether a newer build targets 26.2 specifically before you build.
-
-Everything else (whitelist file writes, HTTP server, invite storage,
-config, permission-node plumbing) is plain Java/JDK code with no
-Minecraft-version sensitivity.
-
-## Troubleshooting
-
-**`Could not find method modImplementation() for arguments [...]`** - this
-means the build script is using the old `modImplementation`/`modApi`
-configurations, which don't exist on Minecraft 26.1+'s non-remapping Loom
-plugin (there's nothing to remap anymore, so Loom doesn't add "mod"
-variants of the dependency configurations). Fix: use plain `implementation`
-for all dependencies, as this project's `build.gradle` already does.
-
-**`Could not resolve net.fabricmc:fabric-loom:1.17.x` / plugin API version
-mismatch (e.g. "consumer needed ... 9.5.0" but got "9.2.0")** - this means
-the build ran under a Gradle version older than what Loom 1.17.x requires
-(Gradle 9.5+). It happens if you run a bare `gradle build` with whatever
-Gradle you already had installed instead of `./gradlew build`. Fix: run
-`gradle wrapper` once (regenerates the wrapper jar to match the pinned
-9.5.1 in `gradle-wrapper.properties`), then always use `./gradlew`/`gradlew.bat`.
