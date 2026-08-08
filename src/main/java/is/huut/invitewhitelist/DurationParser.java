@@ -1,4 +1,4 @@
-package com.example.invitewhitelist;
+package is.huut.invitewhitelist;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;

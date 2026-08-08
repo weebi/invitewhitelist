@@ -1,4 +1,4 @@
-package com.example.invitewhitelist;
+package is.huut.invitewhitelist;
 
 import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.CommandDispatcher;

@@ -1,4 +1,4 @@
-package com.example.invitewhitelist;
+package is.huut.invitewhitelist;
 
 import net.fabricmc.api.DedicatedServerModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;

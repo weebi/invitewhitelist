@@ -1,4 +1,4 @@
-package com.example.invitewhitelist;
+package is.huut.invitewhitelist;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;

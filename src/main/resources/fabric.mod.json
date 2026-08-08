@@ -12,7 +12,7 @@
   "environment": "server",
   "entrypoints": {
     "server": [
-      "com.example.invitewhitelist.InviteWhitelistMod"
+      "is.huut.invitewhitelist.InviteWhitelistMod"
     ]
   },
   "depends": {

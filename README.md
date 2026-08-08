@@ -51,16 +51,19 @@ invite-whitelist/
   build.gradle
   settings.gradle
   gradle.properties
-  src/main/resources/fabric.mod.json
-  src/main/java/com/example/invitewhitelist/
-    InviteWhitelistMod.java   - mod entrypoint, wires everything together
-    InviteConfig.java         - config/invitewhitelist/config.json
-    InviteManager.java        - invite storage + lifecycle (invites.json)
-    Invite.java                - one invite's data
-    InviteCommand.java        - /invite create|list|info|revoke|delete|whois|invited|remove
-    InvitePermissions.java    - permission node constants + checks
-    InviteHttpServer.java     - the /join/<code> web page + redemption
-    DurationParser.java       - parses "7d", "12h", "permanent", etc.
+  src/
+    main/
+      java/is/huut/invitewhitelist/
+        InviteWhitelistMod.java   - mod entrypoint, wires everything together
+        InviteConfig.java         - config/invitewhitelist/config.json
+        InviteManager.java        - invite storage + lifecycle (invites.json)
+        Invite.java                - one invite's data
+        InviteCommand.java        - /invite create|list|info|revoke|delete|whois|invited|remove
+        InvitePermissions.java    - permission node constants + checks
+        InviteHttpServer.java     - the /join/<code> web page + redemption
+        DurationParser.java       - parses "7d", "12h", "permanent", etc.
+      resources/
+        fabric.mod.json
 ```
 
 ## Building
