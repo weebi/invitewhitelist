@@ -135,6 +135,7 @@ single OP check, using [fabric-permissions-api](https://github.com/lucko/fabric-
 | `invitewhitelist.whois` | `/invite whois <player>` |
 | `invitewhitelist.invited` | `/invite invited [player]` |
 | `invitewhitelist.remove` | `/invite remove <player>` |
+| `invitewhitelist.reload` | `/invite reload` |
 | `invitewhitelist.admin` | Bypasses the "only your own invites" restriction (see below) |
 
 **Without a permission manager installed**, every node falls back to
@@ -162,6 +163,8 @@ restricted to invites and invitees that trace back to themselves:
 - `/invite list` only shows invites *they* created.
 - `/invite info` / `revoke` / `delete` fail with "you can only manage
   invites you created" for codes they didn't generate.
+- `/invite whois <player>` only works for players redeemed through an invite
+  they created; admins can look up any known player.
 - `/invite invited <player>` only works for themselves unless they're an
   admin (running plain `/invite invited` always means "show me my own
   invitees").
@@ -184,6 +187,8 @@ restricted to invites and invitees that trace back to themselves:
   the player argument to see your own invitees.
 - `/invite remove <player>` - removes a player from the vanilla whitelist
   and disconnects them if they're currently online.
+- `/invite reload` - reloads `config.json` from disk and restarts the embedded
+  HTTP server so configuration changes take effect without restarting Minecraft.
 
 ## Security notes / trust model
 
