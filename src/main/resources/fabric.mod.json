@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "invitewhitelist",
+  "version": "${version}",
+  "name": "Invite Whitelist",
+  "description": "Turns the vanilla whitelist into an invite-link system. Generate a code, send a join link, and players add their own UUID to the whitelist.",
+  "authors": [
+    "weebi"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "environment": "server",
+  "entrypoints": {
+    "server": [
+      "com.example.invitewhitelist.InviteWhitelistMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.0",
+    "minecraft": "26.2",
+    "java": ">=25",
+    "fabric-api": "*",
+    "fabric-permissions-api-v0": "*"
+  }
+}

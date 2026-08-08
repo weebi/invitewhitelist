@@ -1,0 +1,65 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+	archivesName = project.archives_base_name
+}
+
+repositories {
+	// Loom already adds the Fabric/Mojang repositories needed to resolve
+	// Minecraft and the loader. Add anything extra here if you depend on
+	// other mods.
+}
+
+dependencies {
+	// Minecraft 26.2 ships unobfuscated (Mojang official names), so there is
+	// no "mappings" line here - Loom just uses the vanilla jar directly.
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+	// Note: Minecraft 26.1+ uses the new non-remapping Loom plugin, which
+	// doesn't remap anything - so unlike older Fabric projects, dependencies
+	// here use plain "implementation", not "modImplementation"/"modApi".
+	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// Lets us check LuckPerms (or any other compatible permission manager)
+	// nodes for the /invite subcommands, instead of a hard OP requirement.
+	// Bundled into our own jar via include() so server owners don't need to
+	// separately install it.
+	include(implementation("me.lucko:fabric-permissions-api:${project.fabric_permissions_api_version}"))
+}
+
+processResources {
+	inputs.property "version", project.version
+	filesMatching("fabric.mod.json") {
+		expand "version": project.version
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 25
+}
+
+java {
+	withSourcesJar()
+	sourceCompatibility = JavaVersion.VERSION_25
+	targetCompatibility = JavaVersion.VERSION_25
+}
+
+// configure the maven publication
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			artifactId = project.archives_base_name
+			from components.java
+		}
+	}
+	repositories {
+		// Add repositories to publish to here.
+	}
+}
