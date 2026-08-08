@@ -18,6 +18,7 @@ public final class InvitePermissions {
     public static final String WHOIS = "invitewhitelist.whois";
     public static final String INVITED = "invitewhitelist.invited";
     public static final String REMOVE = "invitewhitelist.remove";
+    public static final String RELOAD = "invitewhitelist.reload";
 
     /** Bypasses the "only your own invites/invitees" restriction and can manage everyone's. */
     public static final String ADMIN = "invitewhitelist.admin";

@@ -8,6 +8,7 @@ import net.minecraft.server.players.NameAndId;
 import net.minecraft.server.players.PlayerList;
 import net.minecraft.server.players.UserWhiteList;
 import net.minecraft.server.players.UserWhiteListEntry;
+import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -20,8 +21,6 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * A minimal, dependency-free HTTP server (built on the JDK's own
@@ -33,7 +32,7 @@ import java.util.logging.Logger;
  * InviteConfig.publicBaseUrl at that proxy's public address.
  */
 public class InviteHttpServer {
-    private static final Logger LOGGER = Logger.getLogger("invitewhitelist-http");
+    private static final Logger LOGGER = InviteWhitelistMod.LOGGER;
     private static final long RATE_LIMIT_MILLIS = 2000; // per-IP cooldown on POST /join/*
 
     private final MinecraftServer minecraftServer;
@@ -78,7 +77,7 @@ public class InviteHttpServer {
                 default -> respond(exchange, 405, "text/plain; charset=utf-8", "Method not allowed");
             }
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Error handling invite request", e);
+            LOGGER.warn("InviteWhitelist: Error handling invite request", e);
             try {
                 respond(exchange, 500, "text/plain; charset=utf-8", "Internal server error");
             } catch (IOException ignored) {
@@ -171,7 +170,7 @@ public class InviteHttpServer {
             }).get();
         } catch (Exception e) {
             inviteManager.releaseReservation(code);
-            LOGGER.log(Level.WARNING, "Failed to add " + profile.name() + " to the whitelist", e);
+            LOGGER.warn("InviteWhitelist: Failed to add {} to the whitelist", profile.name(), e);
             respond(exchange, 500, "text/html; charset=utf-8", page("Something went wrong",
                     "<p>The server couldn't update the whitelist. Ask the server owner to check the logs.</p>"));
             return;
@@ -179,7 +178,7 @@ public class InviteHttpServer {
 
         inviteManager.recordRedemption(code, profile.id(), profile.name());
 
-        LOGGER.info("Redeemed invite " + code + " for " + profile.name() + " (" + profile.id() + ")");
+        LOGGER.info("InviteWhitelist: Redeemed invite {} for {} ({})", code, profile.name(), profile.id());
 
         respond(exchange, 200, "text/html; charset=utf-8", page("You're whitelisted!",
                 "<p><strong>" + escape(profile.name()) + "</strong> has been added to the whitelist.</p>"

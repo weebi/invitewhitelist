@@ -5,6 +5,8 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -21,11 +23,14 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 
 /**
- * Registers "/invite create|list|info|revoke|delete|whois|invited|remove".
+ * Registers "/invite create|list|info|revoke|delete|whois|invited|remove|reload".
  *
  * Every subcommand is gated by its own permission node (see
  * {@link InvitePermissions}) rather than a single OP check, so you can grant
@@ -67,14 +72,17 @@ public final class InviteCommand {
                 .then(Commands.literal("info")
                         .requires(source -> InvitePermissions.has(source, InvitePermissions.INFO))
                         .then(Commands.argument("code", StringArgumentType.word())
+                        .suggests(InviteCommand::suggestAccessibleCodes)
                                 .executes(InviteCommand::info)))
                 .then(Commands.literal("revoke")
                         .requires(source -> InvitePermissions.has(source, InvitePermissions.REVOKE))
                         .then(Commands.argument("code", StringArgumentType.word())
+                        .suggests(InviteCommand::suggestAccessibleCodes)
                                 .executes(InviteCommand::revoke)))
                 .then(Commands.literal("delete")
                         .requires(source -> InvitePermissions.has(source, InvitePermissions.DELETE))
                         .then(Commands.argument("code", StringArgumentType.word())
+                        .suggests(InviteCommand::suggestAccessibleCodes)
                                 .executes(InviteCommand::delete)))
                 .then(Commands.literal("whois")
                         .requires(source -> InvitePermissions.has(source, InvitePermissions.WHOIS))
@@ -84,11 +92,27 @@ public final class InviteCommand {
                         .requires(source -> InvitePermissions.has(source, InvitePermissions.INVITED))
                         .executes(ctx -> invited(ctx, null))
                         .then(Commands.argument("player", StringArgumentType.word())
+                        .suggests(InviteCommand::suggestInvitedPlayers)
                                 .executes(ctx -> invited(ctx, StringArgumentType.getString(ctx, "player")))))
                 .then(Commands.literal("remove")
                         .requires(source -> InvitePermissions.has(source, InvitePermissions.REMOVE))
                         .then(Commands.argument("player", StringArgumentType.word())
-                                .executes(InviteCommand::remove))));
+                                .executes(InviteCommand::remove)))
+                .then(Commands.literal("reload")
+                        .requires(source -> InvitePermissions.has(source, InvitePermissions.RELOAD))
+                        .executes(InviteCommand::reload)));
+    }
+
+    private static int reload(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
+        InviteWhitelistMod.ConfigReloadResult result = InviteWhitelistMod.reloadConfig();
+        if (result.success()) {
+            source.sendSuccess(() -> Component.literal(result.message()), true);
+            return 1;
+        }
+
+        source.sendFailure(Component.literal(result.message()));
+        return 0;
     }
 
     // ---- create ---------------------------------------------------------
@@ -225,12 +249,21 @@ public final class InviteCommand {
 
         Optional<InviteManager.InviterLookup> lookup = InviteWhitelistMod.getManager().findInviteFor(profile.id());
         if (lookup.isEmpty()) {
+            if (!InvitePermissions.isAdmin(source)) {
+                source.sendFailure(Component.literal("You can only look up players invited through your own invites."));
+                return 0;
+            }
             source.sendSuccess(() -> Component.literal(
                     profile.name() + " has no recorded invite (added manually, or before this mod was installed)."), false);
             return 0;
         }
 
         InviteManager.InviterLookup found = lookup.get();
+        if (!InvitePermissions.isAdmin(source)
+                && !found.invite.isOwnedBy(currentPlayerUuid(source))) {
+            source.sendFailure(Component.literal("You can only look up players invited through your own invites."));
+            return 0;
+        }
         source.sendSuccess(() -> Component.literal(
                 found.redemption.username + " was invited by " + found.invite.createdBy
                         + " using code " + found.invite.code + " on "
@@ -325,6 +358,45 @@ public final class InviteCommand {
     }
 
     // ---- helpers ----------------------------------------------------------
+
+    private static CompletableFuture<Suggestions> suggestAccessibleCodes(
+            CommandContext<CommandSourceStack> ctx, SuggestionsBuilder builder) {
+        CommandSourceStack source = ctx.getSource();
+        boolean admin = InvitePermissions.isAdmin(source);
+        String selfUuid = currentPlayerUuid(source);
+        Set<String> codes = new LinkedHashSet<>();
+
+        InviteWhitelistMod.getManager().all().stream()
+                .filter(invite -> admin || invite.isOwnedBy(selfUuid))
+                .sorted(Comparator.comparingLong((Invite invite) -> invite.createdAt).reversed())
+                .map(invite -> invite.code)
+                .forEach(codes::add);
+
+        for (String code : codes) {
+            builder.suggest(code);
+        }
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestInvitedPlayers(
+            CommandContext<CommandSourceStack> ctx, SuggestionsBuilder builder) {
+        CommandSourceStack source = ctx.getSource();
+        boolean admin = InvitePermissions.isAdmin(source);
+        String selfUuid = currentPlayerUuid(source);
+        Set<String> players = new LinkedHashSet<>();
+
+        InviteWhitelistMod.getManager().all().stream()
+                .filter(invite -> admin || invite.isOwnedBy(selfUuid))
+                .filter(invite -> !invite.redemptions.isEmpty())
+                .map(invite -> invite.createdBy)
+                .filter(name -> name != null && !name.isBlank())
+                .forEach(players::add);
+
+        for (String player : players) {
+            builder.suggest(player);
+        }
+        return builder.buildFuture();
+    }
 
     private static Optional<GameProfile> resolveProfile(CommandSourceStack source, String username) {
         return source.getServer().services().profileResolver().fetchByName(username);
