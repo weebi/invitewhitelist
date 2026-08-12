@@ -83,7 +83,7 @@ matching jar - you don't need to pass `--gradle-version` yourself. After that,
 than 9.5.1, you'll hit errors like `Could not resolve net.fabricmc:fabric-loom`
 because Loom 1.17.x specifically requires Gradle 9.5+.
 
-The built mod jar will be at `build/libs/invite-whitelist-1.0.0.jar`.
+The built mod jar will be at `build/libs/invite-whitelist-1.1.0.jar`.
 
 If you use IntelliJ IDEA, just open the folder as a Gradle project - IDEA
 will bootstrap Gradle itself if it's missing.
@@ -105,7 +105,9 @@ will bootstrap Gradle itself if it's missing.
   "httpPort": 8642,
   "bindAddress": "0.0.0.0",
   "publicBaseUrl": "http://localhost:8642",
-  "autoEnableWhitelist": true
+  "autoEnableWhitelist": true,
+  "cloudflareTurnstileSiteKey": "",
+  "cloudflareTurnstileSecretKey": ""
 }
 ```
 
@@ -115,6 +117,14 @@ will bootstrap Gradle itself if it's missing.
   the proxy's public URL, e.g. `https://join.yourserver.example`.
 - `autoEnableWhitelist` - if true, the mod flips `white-list=true` for you
   on startup so you don't forget to actually turn the whitelist on.
+- `cloudflareTurnstileSiteKey` - your Cloudflare Turnstile site key. When set,
+  the join page will display a Turnstile challenge before whitelist redemption.
+- `cloudflareTurnstileSecretKey` - your Cloudflare Turnstile secret key. The
+  server validates the Turnstile token before adding a player to the whitelist.
+
+> Note: Cloudflare Turnstile is optional. Set both keys to non-empty values to
+> enable verification. If either key is blank, the join form will work without
+> a Turnstile challenge.
 
 ## Permissions
 

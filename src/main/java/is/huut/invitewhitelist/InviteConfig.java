@@ -33,6 +33,17 @@ public class InviteConfig {
     /** If true, automatically turns on white-list=true when the server starts. */
     public boolean autoEnableWhitelist = true;
 
+    /** Cloudflare Turnstile site key for the join form. */
+    public String cloudflareTurnstileSiteKey = "";
+
+    /** Cloudflare Turnstile secret key used for server-side validation. */
+    public String cloudflareTurnstileSecretKey = "";
+
+    public boolean isTurnstileEnabled() {
+        return cloudflareTurnstileSiteKey != null && !cloudflareTurnstileSiteKey.isBlank()
+                && cloudflareTurnstileSecretKey != null && !cloudflareTurnstileSecretKey.isBlank();
+    }
+
     public static Path configDir() {
         return FabricLoader.getInstance().getConfigDir().resolve("invitewhitelist");
     }

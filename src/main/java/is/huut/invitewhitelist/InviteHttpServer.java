@@ -1,5 +1,8 @@
 package is.huut.invitewhitelist;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mojang.authlib.GameProfile;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -13,7 +16,12 @@ import org.slf4j.Logger;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.URLEncoder;
 import java.net.URLDecoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
@@ -34,6 +42,10 @@ import java.util.concurrent.Executors;
 public class InviteHttpServer {
     private static final Logger LOGGER = InviteWhitelistMod.LOGGER;
     private static final long RATE_LIMIT_MILLIS = 2000; // per-IP cooldown on POST /join/*
+    private static final String TURNTSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+    private static final String TURNTSTILE_SCRIPT_URL = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+    private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
+    private static final Gson GSON = new Gson();
 
     private final MinecraftServer minecraftServer;
     private final InviteManager inviteManager;
@@ -62,6 +74,34 @@ public class InviteHttpServer {
     public void stop() {
         if (httpServer != null) httpServer.stop(0);
         if (executor != null) executor.shutdownNow();
+    }
+
+    private boolean isTurnstileEnabled() {
+        return config != null && config.isTurnstileEnabled();
+    }
+
+    private boolean verifyTurnstile(String remoteAddress, String responseToken) throws IOException, InterruptedException {
+        String requestBody = "secret=" + URLEncoder.encode(config.cloudflareTurnstileSecretKey, StandardCharsets.UTF_8)
+                + "&response=" + URLEncoder.encode(responseToken, StandardCharsets.UTF_8);
+        if (remoteAddress != null && !remoteAddress.isBlank() && !"unknown".equals(remoteAddress)) {
+            requestBody += "&remoteip=" + URLEncoder.encode(remoteAddress, StandardCharsets.UTF_8);
+        }
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(TURNTSTILE_VERIFY_URL))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                .build();
+
+        HttpResponse<String> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (response.statusCode() != 200) {
+            LOGGER.warn("InviteWhitelist: Turnstile verification failed with HTTP {} and body {}",
+                    response.statusCode(), response.body());
+            return false;
+        }
+
+        JsonObject body = JsonParser.parseString(response.body()).getAsJsonObject();
+        return body.has("success") && body.get("success").getAsBoolean();
     }
 
     private void handleJoin(HttpExchange exchange) {
@@ -104,16 +144,25 @@ public class InviteHttpServer {
             return;
         }
 
+        String turnstileScript = "";
+        String turnstileWidget = "";
+        if (isTurnstileEnabled()) {
+            turnstileScript = "<script src=\"" + TURNTSTILE_SCRIPT_URL + "\" async defer></script>";
+            turnstileWidget = "<div class=\"cf-turnstile\" data-sitekey=\"" + escape(config.cloudflareTurnstileSiteKey) + "\"></div>";
+        }
+
         String body = ("""
+                %s
                 <form method="POST" action="/join/%s">
                   <label for="username">Minecraft username</label>
                   <input id="username" name="username" type="text" maxlength="16"
                          pattern="[A-Za-z0-9_]{2,16}" required autofocus autocomplete="off">
+                  %s
                   <button type="submit">Join whitelist</button>
                 </form>
                 <p class="hint">This adds your Minecraft account's UUID to the server whitelist.
                 Use your exact in-game username (the one you log in with).</p>
-                """).formatted(escape(invite.code));
+                """).formatted(turnstileScript, escape(invite.code), turnstileWidget);
 
         respond(exchange, 200, "text/html; charset=utf-8", page("Join the server", body));
     }
@@ -135,6 +184,27 @@ public class InviteHttpServer {
         }
 
         Map<String, String> form = parseForm(exchange);
+        if (isTurnstileEnabled()) {
+            String turnstileResponse = form.getOrDefault("cf-turnstile-response", "").trim();
+            if (turnstileResponse.isEmpty()) {
+                respond(exchange, 400, "text/html; charset=utf-8", page("Verification required",
+                        "<p>Please complete the Turnstile verification before joining.</p>"));
+                return;
+            }
+            try {
+                if (!verifyTurnstile(remote, turnstileResponse)) {
+                    respond(exchange, 400, "text/html; charset=utf-8", page("Verification failed",
+                            "<p>The Turnstile verification did not succeed. Please try again.</p>"));
+                    return;
+                }
+            } catch (Exception e) {
+                LOGGER.warn("InviteWhitelist: Turnstile verification error", e);
+                respond(exchange, 500, "text/html; charset=utf-8", page("Verification error",
+                        "<p>Unable to verify the Turnstile response right now. Please try again later.</p>"));
+                return;
+            }
+        }
+
         String username = form.getOrDefault("username", "").trim();
         if (username.isEmpty() || !username.matches("[A-Za-z0-9_]{2,16}")) {
             respond(exchange, 400, "text/html; charset=utf-8", page("Invalid username",
