@@ -23,7 +23,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -62,13 +65,59 @@ public class InviteHttpServer {
     }
 
     public void start() throws IOException {
+        Files.createDirectories(webAssetsDir());
         httpServer = HttpServer.create(new InetSocketAddress(config.bindAddress, config.httpPort), 0);
         executor = Executors.newVirtualThreadPerTaskExecutor();
         httpServer.setExecutor(executor);
         httpServer.createContext("/join/", this::handleJoin);
+        httpServer.createContext("/assets/", this::handleAssets);
         httpServer.createContext("/", exchange ->
                 respond(exchange, 200, "text/plain; charset=utf-8", "Invite Whitelist server is running."));
         httpServer.start();
+    }
+
+    /** Local folder admins can drop a background image / custom.css / favicon into. */
+    private static Path webAssetsDir() {
+        return InviteConfig.configDir().resolve("web");
+    }
+
+    private void handleAssets(HttpExchange exchange) throws IOException {
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            respond(exchange, 405, "text/plain; charset=utf-8", "Method not allowed");
+            return;
+        }
+
+        Path base = webAssetsDir().normalize();
+        String prefix = "/assets/";
+        String path = exchange.getRequestURI().getPath();
+        String rawName = path.length() > prefix.length() ? path.substring(prefix.length()) : "";
+        String name = URLDecoder.decode(rawName, StandardCharsets.UTF_8);
+
+        Path target = base.resolve(name).normalize();
+        if (name.isEmpty() || !target.startsWith(base) || !Files.isRegularFile(target)) {
+            respond(exchange, 404, "text/plain; charset=utf-8", "Not found");
+            return;
+        }
+
+        byte[] bytes = Files.readAllBytes(target);
+        exchange.getResponseHeaders().set("Content-Type", contentTypeFor(target));
+        exchange.getResponseHeaders().set("Cache-Control", "public, max-age=300");
+        exchange.sendResponseHeaders(200, bytes.length);
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(bytes);
+        }
+    }
+
+    private static String contentTypeFor(Path path) {
+        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (name.endsWith(".png")) return "image/png";
+        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+        if (name.endsWith(".gif")) return "image/gif";
+        if (name.endsWith(".webp")) return "image/webp";
+        if (name.endsWith(".svg")) return "image/svg+xml";
+        if (name.endsWith(".ico")) return "image/x-icon";
+        if (name.endsWith(".css")) return "text/css; charset=utf-8";
+        return "application/octet-stream";
     }
 
     public void stop() {
@@ -250,9 +299,37 @@ public class InviteHttpServer {
 
         LOGGER.info("InviteWhitelist: Redeemed invite {} for {} ({})", code, profile.name(), profile.id());
 
-        respond(exchange, 200, "text/html; charset=utf-8", page("You're whitelisted!",
-                "<p><strong>" + escape(profile.name()) + "</strong> has been added to the whitelist.</p>"
-                        + "<p>You can close this page and join the server now.</p>"));
+        respond(exchange, 200, "text/html; charset=utf-8", page("You're whitelisted!", successBody(profile)));
+    }
+
+    private String successBody(GameProfile profile) {
+        String message = config.successMessage != null && !config.successMessage.isBlank()
+                ? config.successMessage
+                : "<p><strong>{player}</strong> has been added to the whitelist.</p>"
+                        + "<p>You can close this page and join the server now.</p>";
+        message = message.replace("{player}", escape(profile.name()))
+                .replace("{server_address}", escape(config.serverAddress))
+                .replace("{server_version}", escape(config.serverVersion));
+
+        boolean hasAddress = config.serverAddress != null && !config.serverAddress.isBlank();
+        boolean hasVersion = config.serverVersion != null && !config.serverVersion.isBlank();
+        if (!hasAddress && !hasVersion) {
+            return message;
+        }
+
+        StringBuilder infobox = new StringBuilder("<div class=\"infobox\">");
+        if (hasAddress) {
+            infobox.append("<div class=\"infobox-row\"><span>Server address</span>")
+                    .append("<code onclick=\"navigator.clipboard.writeText(this.textContent)\" title=\"Click to copy\">")
+                    .append(escape(config.serverAddress)).append("</code></div>");
+        }
+        if (hasVersion) {
+            infobox.append("<div class=\"infobox-row\"><span>Version</span>")
+                    .append("<code onclick=\"navigator.clipboard.writeText(this.textContent)\" title=\"Click to copy\">")
+                    .append(escape(config.serverVersion)).append("</code></div>");
+        }
+        infobox.append("</div>");
+        return message + infobox;
     }
 
     private boolean isRateLimited(String remoteAddress) {
@@ -295,7 +372,27 @@ public class InviteHttpServer {
         };
     }
 
-    private static String page(String title, String bodyHtml) {
+    private String page(String title, String bodyHtml) {
+        String backgroundStyle = "";
+        if (config != null && config.backgroundImageUrl != null && !config.backgroundImageUrl.isBlank()) {
+            backgroundStyle = """
+                    body { background-image: url('%s'); background-size: cover;
+                           background-position: center; background-attachment: fixed; }
+                    body::before { content: ""; position: fixed; inset: 0;
+                           background: rgba(0,0,0,0.45); z-index: -1; }
+                    """.formatted(escapeCssUrl(config.backgroundImageUrl));
+        }
+
+        String faviconLink = "";
+        if (config != null && config.faviconUrl != null && !config.faviconUrl.isBlank()) {
+            faviconLink = "<link rel=\"icon\" href=\"" + escape(config.faviconUrl) + "\">";
+        }
+
+        String customCssLink = "";
+        if (config != null && config.customCssUrl != null && !config.customCssUrl.isBlank()) {
+            customCssLink = "<link rel=\"stylesheet\" href=\"" + escape(config.customCssUrl) + "\">";
+        }
+
         return ("""
                 <!DOCTYPE html>
                 <html lang="en">
@@ -303,6 +400,7 @@ public class InviteHttpServer {
                   <meta charset="utf-8">
                   <meta name="viewport" content="width=device-width, initial-scale=1">
                   <title>%s</title>
+                  %s
                   <style>
                     body { font-family: system-ui, sans-serif; background: #1b1b1f; color: #eee;
                            display: flex; align-items: center; justify-content: center;
@@ -317,7 +415,16 @@ public class InviteHttpServer {
                              background: #4caf50; color: white; font-weight: 600; cursor: pointer; }
                     button:hover { background: #43a047; }
                     .hint { font-size: 0.85rem; color: #999; }
+                    .infobox { margin-top: 1.2rem; border: 1px solid #3a3a42; border-radius: 8px; overflow: hidden; }
+                    .infobox-row { display: flex; align-items: center; justify-content: space-between;
+                                   padding: 0.6rem 0.9rem; border-bottom: 1px solid #3a3a42; }
+                    .infobox-row:last-child { border-bottom: none; }
+                    .infobox-row span { font-size: 0.85rem; color: #999; }
+                    .infobox-row code { background: #1b1b1f; color: #eee; padding: 0.25rem 0.5rem;
+                                         border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+                    %s
                   </style>
+                  %s
                 </head>
                 <body>
                   <div class="card">
@@ -326,7 +433,16 @@ public class InviteHttpServer {
                   </div>
                 </body>
                 </html>
-                """).formatted(escape(title), escape(title), bodyHtml);
+                """).formatted(escape(title), faviconLink, backgroundStyle, customCssLink, escape(title), bodyHtml);
+    }
+
+    /**
+     * Percent-encodes characters that would let a config value break out of the
+     * single-quoted CSS url('...') it's interpolated into (or out of the
+     * enclosing <style> tag entirely).
+     */
+    private static String escapeCssUrl(String url) {
+        return url.replace("'", "%27").replace("\"", "%22").replace("</style", "");
     }
 
     private static void respond(HttpExchange exchange, int status, String contentType, String body) throws IOException {

@@ -39,6 +39,43 @@ public class InviteConfig {
     /** Cloudflare Turnstile secret key used for server-side validation. */
     public String cloudflareTurnstileSecretKey = "";
 
+    /**
+     * Background image for the join pages. Either a full URL
+     * (e.g. "https://example.com/bg.jpg") or a path served from
+     * config/invitewhitelist/web/, e.g. "/assets/background.jpg".
+     * Empty = no background image.
+     */
+    public String backgroundImageUrl = "";
+
+    /**
+     * Extra stylesheet injected after the built-in styles so its rules can
+     * override them. Same URL rules as backgroundImageUrl. Empty = disabled.
+     */
+    public String customCssUrl = "";
+
+    /**
+     * Favicon for the join pages. Same URL rules as backgroundImageUrl.
+     * Empty = no favicon (browser default).
+     */
+    public String faviconUrl = "";
+
+    /**
+     * Address players should type into their Minecraft client, shown after a
+     * successful join (e.g. "play.example.com"). Empty = not shown.
+     */
+    public String serverAddress = "";
+
+    /** Server version shown after a successful join (e.g. "1.21.4 Fabric"). Empty = not shown. */
+    public String serverVersion = "";
+
+    /**
+     * Custom HTML shown on the success page after a player is whitelisted.
+     * Supports {player}, {server_address}, {server_version} placeholders.
+     * Not HTML-escaped (this is admin-authored content, so links/formatting
+     * are allowed) - empty means use the built-in default message.
+     */
+    public String successMessage = "";
+
     public boolean isTurnstileEnabled() {
         return cloudflareTurnstileSiteKey != null && !cloudflareTurnstileSiteKey.isBlank()
                 && cloudflareTurnstileSecretKey != null && !cloudflareTurnstileSecretKey.isBlank();
@@ -59,7 +96,9 @@ public class InviteConfig {
             if (Files.exists(file)) {
                 try (Reader reader = Files.newBufferedReader(file)) {
                     InviteConfig cfg = GSON.fromJson(reader, InviteConfig.class);
-                    return cfg != null ? cfg : new InviteConfig();
+                    if (cfg == null) cfg = new InviteConfig();
+                    cfg.save();
+                    return cfg;
                 }
             } else {
                 InviteConfig cfg = new InviteConfig();

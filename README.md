@@ -83,7 +83,7 @@ matching jar - you don't need to pass `--gradle-version` yourself. After that,
 than 9.5.1, you'll hit errors like `Could not resolve net.fabricmc:fabric-loom`
 because Loom 1.17.x specifically requires Gradle 9.5+.
 
-The built mod jar will be at `build/libs/invite-whitelist-1.1.0.jar`.
+The built mod jar will be at `build/libs/invite-whitelist-1.2.0.jar`.
 
 If you use IntelliJ IDEA, just open the folder as a Gradle project - IDEA
 will bootstrap Gradle itself if it's missing.
@@ -107,7 +107,13 @@ will bootstrap Gradle itself if it's missing.
   "publicBaseUrl": "http://localhost:8642",
   "autoEnableWhitelist": true,
   "cloudflareTurnstileSiteKey": "",
-  "cloudflareTurnstileSecretKey": ""
+  "cloudflareTurnstileSecretKey": "",
+  "backgroundImageUrl": "",
+  "customCssUrl": "",
+  "faviconUrl": "",
+  "serverAddress": "",
+  "serverVersion": "",
+  "successMessage": ""
 }
 ```
 
@@ -121,10 +127,36 @@ will bootstrap Gradle itself if it's missing.
   the join page will display a Turnstile challenge before whitelist redemption.
 - `cloudflareTurnstileSecretKey` - your Cloudflare Turnstile secret key. The
   server validates the Turnstile token before adding a player to the whitelist.
+- `backgroundImageUrl` - background image shown behind the join card. Either a
+  full URL (`https://example.com/bg.jpg`) or a path served from
+  `config/invitewhitelist/web/` (see below), e.g. `/assets/background.jpg`.
+  Blank = no background image.
+- `customCssUrl` - an extra stylesheet loaded after the built-in styles, so
+  its rules can override them. Same URL rules as `backgroundImageUrl`. Blank
+  = disabled.
+- `faviconUrl` - browser tab icon for the join pages. Same URL rules as
+  `backgroundImageUrl`. Blank = browser default.
+- `serverAddress` / `serverVersion` - shown as a copy-to-clipboard info box on
+  the success page after someone is whitelisted, e.g. `play.example.com` and
+  `1.21.4 Fabric`. Either can be left blank to omit that row; leaving both
+  blank hides the info box entirely.
+- `successMessage` - custom HTML shown on the success page instead of the
+  default "You've been whitelisted" text. Supports the placeholders
+  `{player}`, `{server_address}`, and `{server_version}`. This is **not**
+  escaped, so you can use links/formatting - only put trusted content here.
+  Blank = use the built-in default message.
 
 > Note: Cloudflare Turnstile is optional. Set both keys to non-empty values to
 > enable verification. If either key is blank, the join form will work without
 > a Turnstile challenge.
+
+### Local background/CSS/favicon files
+
+If you'd rather not host an image or stylesheet externally, drop it into
+`config/invitewhitelist/web/` (created automatically on first start) and
+reference it as `/assets/<filename>` in `backgroundImageUrl`, `customCssUrl`,
+or `faviconUrl` - e.g. a file at `config/invitewhitelist/web/background.jpg`
+is served at `/assets/background.jpg`.
 
 ## Permissions
 
