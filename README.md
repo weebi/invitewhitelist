@@ -83,7 +83,7 @@ matching jar - you don't need to pass `--gradle-version` yourself. After that,
 than 9.5.1, you'll hit errors like `Could not resolve net.fabricmc:fabric-loom`
 because Loom 1.17.x specifically requires Gradle 9.5+.
 
-The built mod jar will be at `build/libs/invite-whitelist-1.2.0.jar`.
+The built mod jar will be at `build/libs/invite-whitelist-1.2.1.jar`.
 
 If you use IntelliJ IDEA, just open the folder as a Gradle project - IDEA
 will bootstrap Gradle itself if it's missing.
@@ -244,6 +244,16 @@ restricted to invites and invitees that trace back to themselves:
   there's a light 2-second per-IP cooldown on submissions, nothing more.
   For a public-facing box, put this behind a reverse proxy and add real
   rate limiting / TLS there.
+- That per-IP cooldown (and the IP sent to Cloudflare for Turnstile
+  verification) is read from the `X-Forwarded-For`/`X-Real-IP` headers set
+  by the reverse proxy in front of it, falling back to the direct socket
+  address if neither is present. This is only safe when the embedded
+  `httpPort` itself is **not** reachable directly from outside (only
+  through the proxy) - otherwise a client could set those headers itself
+  and bypass the cooldown entirely.
+- POST bodies to `/join/*` are capped at 16 KB and the embedded server
+  enforces a 30-second request/response timeout, to keep a slow or
+  oversized request from tying up memory or a connection indefinitely.
 - The embedded server is plain HTTP with no TLS. Use a reverse proxy
   (Caddy, nginx, Cloudflare Tunnel, etc.) in front of it for HTTPS, and
   set `publicBaseUrl` to the proxy's address.

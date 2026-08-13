@@ -13,7 +13,9 @@ import net.minecraft.server.players.UserWhiteList;
 import net.minecraft.server.players.UserWhiteListEntry;
 import org.slf4j.Logger;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -49,6 +51,27 @@ public class InviteHttpServer {
     private static final String TURNTSTILE_SCRIPT_URL = "https://challenges.cloudflare.com/turnstile/v0/api.js";
     private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
     private static final Gson GSON = new Gson();
+
+    // A username plus a Turnstile response token comfortably fits in a few KB;
+    // anything past this is refused outright instead of being buffered in memory.
+    private static final int MAX_FORM_BODY_BYTES = 16 * 1024;
+
+    static {
+        // com.sun.net.httpserver has no public API for request/response timeouts,
+        // so a slow client can otherwise hold a connection (and its virtual
+        // thread) open indefinitely. These are internal implementation
+        // properties of the JDK's reference HttpServer (values in
+        // MILLISECONDS - not seconds) that bound only the I/O phases of
+        // reading the request and writing the response, not time spent
+        // inside the handler itself, so they won't cut off a legitimately
+        // slow Turnstile/Mojang lookup or a busy main server thread.
+        if (System.getProperty("sun.net.httpserver.maxReqTime") == null) {
+            System.setProperty("sun.net.httpserver.maxReqTime", "30000");
+        }
+        if (System.getProperty("sun.net.httpserver.maxRspTime") == null) {
+            System.setProperty("sun.net.httpserver.maxRspTime", "30000");
+        }
+    }
 
     private final MinecraftServer minecraftServer;
     private final InviteManager inviteManager;
@@ -217,9 +240,7 @@ public class InviteHttpServer {
     }
 
     private void handlePost(HttpExchange exchange, String code) throws IOException {
-        String remote = exchange.getRemoteAddress() != null
-                ? exchange.getRemoteAddress().getAddress().getHostAddress()
-                : "unknown";
+        String remote = clientAddress(exchange);
         if (isRateLimited(remote)) {
             respond(exchange, 429, "text/html; charset=utf-8", page("Slow down",
                     "<p>Too many attempts. Wait a couple of seconds and try again.</p>"));
@@ -232,7 +253,14 @@ public class InviteHttpServer {
             return;
         }
 
-        Map<String, String> form = parseForm(exchange);
+        Map<String, String> form;
+        try {
+            form = parseForm(exchange);
+        } catch (RequestTooLargeException e) {
+            respond(exchange, 413, "text/html; charset=utf-8", page("Request too large",
+                    "<p>That request was too large.</p>"));
+            return;
+        }
         if (isTurnstileEnabled()) {
             String turnstileResponse = form.getOrDefault("cf-turnstile-response", "").trim();
             if (turnstileResponse.isEmpty()) {
@@ -338,8 +366,30 @@ public class InviteHttpServer {
         return last != null && (now - last) < RATE_LIMIT_MILLIS;
     }
 
+    /**
+     * The reverse proxy this is meant to run behind (see README) sets
+     * X-Forwarded-For/X-Real-IP; without reading them every request looks
+     * like it comes from the proxy itself, which turns per-IP rate limiting
+     * into one cooldown shared by every visitor. Trusting these headers is
+     * only safe because the embedded port isn't meant to be reachable
+     * directly from outside - if it ever is, they become spoofable.
+     */
+    private static String clientAddress(HttpExchange exchange) {
+        String forwardedFor = exchange.getRequestHeaders().getFirst("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isBlank()) {
+            return forwardedFor.split(",", 2)[0].trim();
+        }
+        String realIp = exchange.getRequestHeaders().getFirst("X-Real-IP");
+        if (realIp != null && !realIp.isBlank()) {
+            return realIp.trim();
+        }
+        return exchange.getRemoteAddress() != null
+                ? exchange.getRemoteAddress().getAddress().getHostAddress()
+                : "unknown";
+    }
+
     private static Map<String, String> parseForm(HttpExchange exchange) throws IOException {
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        String body = new String(readLimited(exchange.getRequestBody(), MAX_FORM_BODY_BYTES), StandardCharsets.UTF_8);
         Map<String, String> result = new HashMap<>();
         for (String pair : body.split("&")) {
             if (pair.isEmpty()) continue;
@@ -349,6 +399,25 @@ public class InviteHttpServer {
             result.put(key, value);
         }
         return result;
+    }
+
+    /** Reads at most {@code limit} bytes; throws rather than buffering anything larger. */
+    private static byte[] readLimited(InputStream in, int limit) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream(Math.min(limit, 4096));
+        byte[] buf = new byte[4096];
+        int total = 0;
+        int n;
+        while ((n = in.read(buf)) != -1) {
+            total += n;
+            if (total > limit) {
+                throw new RequestTooLargeException();
+            }
+            out.write(buf, 0, n);
+        }
+        return out.toByteArray();
+    }
+
+    private static final class RequestTooLargeException extends IOException {
     }
 
     private static String escape(String s) {
